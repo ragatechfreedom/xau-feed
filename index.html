@@ -2,31 +2,34 @@
 <html lang="id">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>XAUUSD Live (M1 OHLC)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>XAUUSD Live (Compact)</title>
 <style>
   :root{color-scheme:dark light}
-  body{font-family:system-ui,Arial,Helvetica,sans-serif;margin:0;background:#0b0e11;color:#e6e8ea}
-  .ticker{display:flex;gap:14px;align-items:baseline;padding:12px 16px;background:#11161c;border-bottom:1px solid #1b232d;position:sticky;top:0}
-  .pair{font-weight:700;letter-spacing:.4px}
-  .price{font-size:28px;font-weight:800}
-  .chg{padding:2px 10px;border-radius:999px;font-weight:700}
-  .up{background:#0f2b17;color:#55d88a}
-  .down{background:#2b1515;color:#ff7b7b}
-  .muted{opacity:.7}
-  .wrap{max-width:1024px;margin:0 auto;padding:12px 16px}
-  table{width:100%;border-collapse:collapse;margin:12px 0}
-  th,td{padding:10px;border-bottom:1px solid #1b232d;text-align:right}
+  body{margin:0;background:#0b0e11;color:#e6e8ea;font-family:system-ui,Arial,Helvetica,sans-serif;font-size:12px}
+  .ticker{display:flex;gap:10px;align-items:center;padding:8px 10px;background:#11161c;border-bottom:1px solid #1b232d;position:sticky;top:0;z-index:2}
+  .pair{font-weight:700;letter-spacing:.3px}
+  .price{font-size:18px;font-weight:800}
+  .chg{padding:1px 6px;border-radius:999px;font-weight:700;font-size:11px}
+  .up{background:#0f2b17;color:#55d88a}.down{background:#2b1515;color:#ff7b7b}
+  .muted{opacity:.7;font-size:11px}
+  .wrap{max-width:1100px;margin:0 auto;padding:8px 10px}
+  .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0}
+  .controls select,.controls button{background:#11161c;border:1px solid #1b232d;color:#e6e8ea;border-radius:8px;padding:4px 8px;font-size:12px}
+  .status{font-size:11px;opacity:.85;margin:6px 0}
+  .tablewrap{overflow:auto;border:1px solid #1b232d;border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  thead th{position:sticky;top:48px;background:#0e1319;z-index:1}
+  th,td{padding:3px 6px;border-bottom:1px solid #1b232d;text-align:right;line-height:1.1}
   th:first-child,td:first-child{text-align:left}
-  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-  .card{background:#11161c;border:1px solid #1b232d;border-radius:14px;padding:12px}
-  .label{font-size:12px;opacity:.8}
-  .val{font-weight:700}
+  /* Dense mode = lebih kecil lagi */
+  body.dense {font-size:11px}
+  body.dense .price{font-size:16px}
+  body.dense th, body.dense td{padding:2px 4px}
 </style>
 </head>
 <body>
 
-<!-- Ticker -->
 <div class="ticker">
   <span class="pair" id="pair">XAUUSD</span>
   <span class="price" id="price">—</span>
@@ -35,151 +38,131 @@
 </div>
 
 <div class="wrap">
-  <div class="grid">
-    <div class="card">
-      <div class="label">Status</div>
-      <div class="val" id="status">Menunggu data…</div>
-    </div>
-    <div class="card">
-      <div class="label">Sumber</div>
-      <div class="val">M1 close (tabel) + latest.json (fallback)</div>
-    </div>
+  <div class="controls">
+    <label>Rows:
+      <select id="limit">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="200">200</option>
+        <option value="500">500</option>
+        <option value="-1">All</option>
+      </select>
+    </label>
+    <button id="density">Dense</button>
+    <span class="status" id="status">Menunggu data…</span>
   </div>
 
-  <h3>OHLC M1 (terbaru di atas)</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>Waktu (UTC)</th>
-        <th>Open</th>
-        <th>High</th>
-        <th>Low</th>
-        <th>Close</th>
-        <th>Volume</th>
-      </tr>
-    </thead>
-    <tbody id="rows"></tbody>
-  </table>
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Waktu (UTC)</th>
+          <th>Open</th>
+          <th>High</th>
+          <th>Low</th>
+          <th>Close</th>
+          <th>Vol</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
-const URL_LATEST = "data/xau_latest.json";
-const URL_M1_JL  = "data/xau_m1.jsonl";
+const URL_LATEST="data/xau_latest.json";
+const URL_M1_JL ="data/xau_m1.jsonl";
+const elPair=document.getElementById("pair");
+const elPrice=document.getElementById("price");
+const elChg=document.getElementById("chg");
+const elTime=document.getElementById("time");
+const elRows=document.getElementById("rows");
+const elStatus=document.getElementById("status");
+const elLimit=document.getElementById("limit");
+const btnDensity=document.getElementById("density");
 
-// util
-const fmt = (n, d=2) => Number.isFinite(+n) ? (+n).toFixed(d) : "—";
-const iso = ts => (ts ? new Date(+ts).toISOString() : "—");
+const fmt=(n,d=2)=>Number.isFinite(+n)?(+n).toFixed(d):"—";
+const iso=ts=>ts?(typeof ts==="number"?new Date(ts).toISOString():String(ts)):"—";
 
-// fetch helpers (no-store + cache buster)
 async function fetchJSON(u){
-  const r = await fetch(u + "?t=" + Date.now(), {cache:"no-store"});
-  if(!r.ok) throw new Error("HTTP " + r.status);
+  const r=await fetch(u+"?t="+Date.now(),{cache:"no-store"});
+  if(!r.ok) throw new Error("HTTP "+r.status);
   return r.json();
 }
 async function fetchJSONL(u){
-  const r = await fetch(u + "?t=" + Date.now(), {cache:"no-store"});
-  if(!r.ok) throw new Error("HTTP " + r.status);
-  const text = await r.text();
-  const rows = [];
-  for (const line of text.split("\n")){
-    const s = line.trim();
-    if(!s) continue;
-    try { rows.push(JSON.parse(s)); } catch(e){}
-  }
+  const r=await fetch(u+"?t="+Date.now(),{cache:"no-store"});
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  const text=await r.text(); const rows=[];
+  for(const line of text.split("\n")){const s=line.trim(); if(!s) continue; try{rows.push(JSON.parse(s))}catch{}}
   return rows;
 }
 
-// DOM refs
-const elPair  = document.getElementById("pair");
-const elPrice = document.getElementById("price");
-const elChg   = document.getElementById("chg");
-const elTime  = document.getElementById("time");
-const elRows  = document.getElementById("rows");
-const elStatus= document.getElementById("status");
-
 function renderTable(rows){
   // newest first
-  const arr = rows.slice().sort((a,b)=>(b.ts_ms||0)-(a.ts_ms||0));
-  elRows.innerHTML = arr.map(r => `
-    <tr>
+  const arr=rows.slice().sort((a,b)=>(b.ts_ms||0)-(a.ts_ms||0));
+  const lim=parseInt(elLimit.value,10);
+  const view=(lim<0)?arr:arr.slice(0,lim);
+  // build once for speed
+  let html="";
+  for(const r of view){
+    html+=`<tr>
       <td>${iso(r.ts_ms)}</td>
       <td>${fmt(r.open)}</td>
       <td>${fmt(r.high)}</td>
       <td>${fmt(r.low)}</td>
       <td>${fmt(r.close)}</td>
-      <td>${r.volume ?? "—"}</td>
-    </tr>
-  `).join("");
+      <td>${r.volume??"—"}</td>
+    </tr>`;
+  }
+  elRows.innerHTML=html;
 }
 
-function renderTicker({latest, last, prev}){
-  elPair.textContent = (latest?.symbol) || (last?.symbol) || "XAUUSD";
-
-  // pilih harga utama
-  let price = Number.isFinite(+last?.close) ? +last.close : null;
-  let ts = last?.ts_ms ?? null;
-  if (!price && latest){
-    if (Number.isFinite(+latest.mid)) { price = +latest.mid; }
-    else if (Number.isFinite(+latest.close)) { price = +latest.close; }
-    else if (Number.isFinite(+latest.bid) && Number.isFinite(+latest.ask)) {
-      price = (+latest.bid + +latest.ask)/2;
-    }
-    ts = latest.ts_ms ?? latest.time;
+function renderTicker({latest,last,prev}){
+  elPair.textContent=(latest?.symbol)||(last?.symbol)||"XAUUSD";
+  let price=Number.isFinite(+last?.close)?+last.close:null;
+  let ts=last?.ts_ms??null;
+  if(!price && latest){
+    if(Number.isFinite(+latest.mid)) price=+latest.mid;
+    else if(Number.isFinite(+latest.close)) price=+latest.close;
+    else if(Number.isFinite(+latest.bid)&&Number.isFinite(+latest.ask)) price=(+latest.bid+ +latest.ask)/2;
+    ts=latest.ts_ms??latest.time;
   }
-  elPrice.textContent = price ? price.toFixed(2) : "—";
-  elTime.textContent = ts ? (typeof ts === "number" ? iso(ts) : String(ts)) : "—";
+  elPrice.textContent=price?price.toFixed(2):"—";
+  elTime.textContent=ts?iso(ts):"—";
 
-  // perubahan dari prev close
-  let diff = null, pct = null;
-  if (Number.isFinite(price) && Number.isFinite(+prev?.close)) {
-    diff = price - (+prev.close);
-    pct  = (price/(+prev.close) - 1) * 100;
-    elChg.textContent = `${diff.toFixed(2)} (${pct.toFixed(2)}%)`;
-    elChg.className = "chg " + (diff >= 0 ? "up" : "down");
-  } else {
-    elChg.textContent = "—";
-    elChg.className = "chg";
-  }
-
-  // status singkat
-  if (last && prev && Number.isFinite(+last.high) && Number.isFinite(+last.low)) {
-    const range = (+last.high - +last.low);
-    const body  = Math.abs(+last.close - +last.open);
-    const ratio = range ? (body / range) : 0;
-    let s = "Netral / Ranging";
-    if (diff !== null) {
-      if (diff > 0 && ratio > 0.6) s = "Bullish bar kuat";
-      else if (diff < 0 && ratio > 0.6) s = "Bearish bar kuat";
-      else if (ratio <= 0.3) s = "Doji / konsolidasi";
-    }
-    elStatus.textContent = s;
-  } else {
-    elStatus.textContent = "Menunggu data…";
-  }
+  if(Number.isFinite(price)&&Number.isFinite(+prev?.close)){
+    const diff=price-(+prev.close);
+    const pct=(price/(+prev.close)-1)*100;
+    elChg.textContent=`${diff.toFixed(2)} (${pct.toFixed(2)}%)`;
+    elChg.className="chg "+(diff>=0?"up":"down");
+  }else{elChg.textContent="—"; elChg.className="chg";}
 }
 
 async function refresh(){
   try{
-    const [latest, m1] = await Promise.all([
+    const [latest,m1]=await Promise.all([
       fetchJSON(URL_LATEST).catch(()=>null),
       fetchJSONL(URL_M1_JL).catch(()=>[])
     ]);
-    // sort ascending untuk ambil last & prev
     m1.sort((a,b)=>(a.ts_ms||0)-(b.ts_ms||0));
-    const last = m1[m1.length-1] || null;
-    const prev = m1[m1.length-2] || null;
-
-    renderTicker({latest, last, prev});
-    if (m1.length) renderTable(m1);
+    const last=m1[m1.length-1]||null;
+    const prev=m1[m1.length-2]||null;
+    renderTicker({latest,last,prev});
+    renderTable(m1);
+    elStatus.textContent=`Bars: ${m1.length}${elLimit.value>0?` • showing ${elLimit.value}`:""}`;
   }catch(e){
-    console.error(e);
-    elStatus.textContent = "Gagal memuat data";
+    console.error(e); elStatus.textContent="Gagal memuat data";
   }
 }
 
-// pertama kali dan refresh berkala (update kamu per menit → 20s cukup)
+elLimit.addEventListener("change",refresh);
+btnDensity.addEventListener("click",()=>{
+  document.body.classList.toggle("dense");
+  btnDensity.textContent=document.body.classList.contains("dense")?"Comfy":"Dense";
+});
+
 refresh();
-setInterval(refresh, 20000);
+setInterval(refresh,20000);
 </script>
 </body>
 </html>
