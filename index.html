@@ -6,51 +6,96 @@
   .ticker{display:flex;gap:14px;align-items:baseline;padding:12px 16px;background:#11161c;border-bottom:1px solid #1b232d;position:sticky;top:0}
   .pair{font-weight:700;letter-spacing:.5px}.price{font-size:28px;font-weight:700}
   .chg{padding:2px 8px;border-radius:999px;font-weight:600}.up{background:#0f2b17;color:#55d88a}.down{background:#2b1515;color:#ff7b7b}
-  .muted{opacity:.7} table{width:100%;border-collapse:collapse;margin:12px 0}
-  th,td{padding:10px;border-bottom:1px solid #1b232d;text-align:left}
-  .wrap{max-width:960px;margin:0 auto;padding:12px 16px}
+  .muted{opacity:.7}
+  .wrap{max-width:1200px;margin:0 auto;padding:12px 16px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  table{width:100%;border-collapse:collapse;margin:8px 0}
+  th,td{padding:8px;border-bottom:1px solid #1b232d;text-align:left;font-variant-numeric:tabular-nums}
+  h3{margin:8px 0}
 </style>
-<div class="ticker">
-  <span class="pair" id="pair">XAUUSD</span>
-  <span class="price" id="price">—</span>
-  <span class="chg" id="chg">—</span>
-  <span class="muted" id="time">—</span>
-</div>
-<div class="wrap">
-  <h3>Ringkasan</h3>
-  <table><thead><tr>
-    <th>TF</th><th>Waktu (UTC)</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Spread</th><th>Volume</th>
-  </tr></thead><tbody id="rows"></tbody></table>
-</div>
+<body>
+  <div class="ticker">
+    <span class="pair" id="pair">XAUUSD</span>
+    <span class="price" id="price">—</span>
+    <span class="chg" id="chg">—</span>
+    <span class="muted" id="time">—</span>
+  </div>
+  <div class="wrap">
+    <div class="grid">
+      <div>
+        <h3>M3 (OHLCV)</h3>
+        <table><thead><tr>
+          <th>Waktu (UTC)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Vol</th>
+        </tr></thead><tbody id="m3"></tbody></table>
+      </div>
+      <div>
+        <h3>H1 (OHLCV)</h3>
+        <table><thead><tr>
+          <th>Waktu (UTC)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Vol</th>
+        </tr></thead><tbody id="h1"></tbody></table>
+      </div>
+    </div>
+  </div>
+
 <script>
-const LATEST="data/latest.json", ROLL="data/ticks.jsonl";
-let lastSeen="";
-function fmt(n){return isFinite(n)?(+n).toFixed(2):"—"}
-async function fetchLatest(){
-  const j=await (await fetch(LATEST,{cache:"no-store"})).json();
-  const mid=isFinite(+j.mid)?+j.mid:((+j.bid+ +j.ask)/2);
-  const prev=j.prev_close; const diff=(isFinite(mid)&&isFinite(+prev))?(mid-prev):NaN;
-  document.getElementById("pair").textContent=j.symbol||"XAUUSD";
-  document.getElementById("price").textContent=fmt(mid);
-  const chg=document.getElementById("chg");
-  if(isFinite(diff)){const pct=((mid/prev-1)*100).toFixed(2);
-    chg.textContent=`${diff.toFixed(2)} (${pct}%)`; chg.className=`chg ${diff>=0?"up":"down"}`;}
-  else{chg.textContent="—"; chg.className="chg";}
-  const t= j.time || (typeof j.ts_ms==="number"? new Date(j.ts_ms).toISOString() : "");
-  document.getElementById("time").textContent=t||"—";
-  if(t && t!==lastSeen){prependRow(j); lastSeen=t;}
+const LATEST="data/latest.json";
+const M3="data/m3.jsonl", H1="data/h1.jsonl";
+let lastStamp="";
+
+function fmt(n){ return (n==null || !isFinite(+n)) ? "—" : (+n).toFixed(2); }
+function tsToISO(t){ return (typeof t==="number") ? new Date(t).toISOString() : (t||"—"); }
+
+function addRow(tbody, o){
+  const tr=document.createElement("tr");
+  tr.innerHTML = `<td>${tsToISO(o.time)}</td>
+    <td>${fmt(o.open)}</td><td>${fmt(o.high)}</td><td>${fmt(o.low)}</td>
+    <td>${fmt(o.close)}</td><td>${o.volume??"—"}</td>`;
+  tbody.prepend(tr);
+  while(tbody.children.length>500) tbody.lastChild.remove();
 }
-function prependRow(j){
-  const mid=isFinite(+j.mid)?+j.mid:((+j.bid+ +j.ask)/2);
-  const tr=document.createElement("tr"); tr.innerHTML=`
-    <td>${j.tf||"—"}</td>
-    <td>${j.time || (typeof j.ts_ms==="number"? new Date(j.ts_ms).toISOString():"—")}</td>
-    <td>${fmt(j.bid)}</td><td>${fmt(j.ask)}</td><td>${fmt(mid)}</td>
-    <td>${isFinite(+j.spread)?(+j.spread).toFixed(2):"—"}</td>
-    <td>${j.volume??"—"}</td>`;
-  const tb=document.getElementById("rows"); tb.prepend(tr);
-  while(tb.children.length>50) tb.lastChild.remove();
+
+async function loadJSONL(url, tbodyId){
+  const tb=document.getElementById(tbodyId); tb.innerHTML="";
+  try{
+    const txt = await (await fetch(url,{cache:"no-store"})).text();
+    const lines = txt.trim()? txt.trim().split("\n") : [];
+    // tampil terbaru di atas
+    for(let i=lines.length-1;i>=0;i--){
+      try{ addRow(tb, JSON.parse(lines[i])); }catch(e){}
+    }
+  }catch(e){ console.error(url,e); }
 }
-fetchLatest(); setInterval(fetchLatest,1000);
+
+async function refreshLatest(){
+  try{
+    const j = await (await fetch(LATEST,{cache:"no-store"})).json();
+    const mid = isFinite(+j.mid)? +j.mid : (isFinite(+j.close)? +j.close : NaN);
+    const prev = isFinite(+j.prev_close)? +j.prev_close : NaN;
+    document.getElementById("pair").textContent = j.symbol || "XAUUSD";
+    document.getElementById("price").textContent = isFinite(mid)? mid.toFixed(2) : "—";
+    const t = j.time ?? j.ts_ms ?? "";
+    document.getElementById("time").textContent = typeof t==="number"? new Date(t).toISOString() : String(t||"—");
+    const chgEl = document.getElementById("chg");
+    if(isFinite(mid) && isFinite(prev)){
+      const d = mid - prev, pct = ((mid/prev-1)*100).toFixed(2)+"%";
+      chgEl.textContent = `${d.toFixed(2)} (${pct})`; chgEl.className = `chg ${d>=0?"up":"down"}`;
+    }else{ chgEl.textContent="—"; chgEl.className="chg"; }
+
+    // jika ada bar baru dan tf-nya M3/H1, tambahkan ke tabel terkait
+    const stamp = `${j.tf||""}-${j.time||j.ts_ms}`;
+    if(stamp && stamp!==lastStamp){
+      lastStamp = stamp;
+      if(j.tf==="M3") addRow(document.getElementById("m3"), j);
+      if(j.tf==="H1") addRow(document.getElementById("h1"), j);
+    }
+  }catch(e){ console.error(e); }
+}
+
+// initial load riwayat
+loadJSONL(M3,"m3"); loadJSONL(H1,"h1");
+// polling
+refreshLatest(); setInterval(refreshLatest, 5000);
+// refresh riwayat berkala (ambil commit Pages baru)
+setInterval(()=>{ loadJSONL(M3,"m3"); loadJSONL(H1,"h1"); }, 60000);
 </script>
-</html>
+</body></html>
