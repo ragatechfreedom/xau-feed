@@ -1,0 +1,56 @@
+<!doctype html><html lang="id"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XAUUSD Live</title>
+<style>
+  body{font-family:system-ui,Arial,Helvetica,sans-serif;margin:0;background:#0b0e11;color:#e6e8ea}
+  .ticker{display:flex;gap:14px;align-items:baseline;padding:12px 16px;background:#11161c;border-bottom:1px solid #1b232d;position:sticky;top:0}
+  .pair{font-weight:700;letter-spacing:.5px}.price{font-size:28px;font-weight:700}
+  .chg{padding:2px 8px;border-radius:999px;font-weight:600}.up{background:#0f2b17;color:#55d88a}.down{background:#2b1515;color:#ff7b7b}
+  .muted{opacity:.7} table{width:100%;border-collapse:collapse;margin:12px 0}
+  th,td{padding:10px;border-bottom:1px solid #1b232d;text-align:left}
+  .wrap{max-width:960px;margin:0 auto;padding:12px 16px}
+</style>
+<div class="ticker">
+  <span class="pair" id="pair">XAUUSD</span>
+  <span class="price" id="price">—</span>
+  <span class="chg" id="chg">—</span>
+  <span class="muted" id="time">—</span>
+</div>
+<div class="wrap">
+  <h3>Ringkasan</h3>
+  <table><thead><tr>
+    <th>TF</th><th>Waktu (UTC)</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Spread</th><th>Volume</th>
+  </tr></thead><tbody id="rows"></tbody></table>
+</div>
+<script>
+const LATEST="data/latest.json", ROLL="data/ticks.jsonl";
+let lastSeen="";
+function fmt(n){return isFinite(n)?(+n).toFixed(2):"—"}
+async function fetchLatest(){
+  const j=await (await fetch(LATEST,{cache:"no-store"})).json();
+  const mid=isFinite(+j.mid)?+j.mid:((+j.bid+ +j.ask)/2);
+  const prev=j.prev_close; const diff=(isFinite(mid)&&isFinite(+prev))?(mid-prev):NaN;
+  document.getElementById("pair").textContent=j.symbol||"XAUUSD";
+  document.getElementById("price").textContent=fmt(mid);
+  const chg=document.getElementById("chg");
+  if(isFinite(diff)){const pct=((mid/prev-1)*100).toFixed(2);
+    chg.textContent=`${diff.toFixed(2)} (${pct}%)`; chg.className=`chg ${diff>=0?"up":"down"}`;}
+  else{chg.textContent="—"; chg.className="chg";}
+  const t= j.time || (typeof j.ts_ms==="number"? new Date(j.ts_ms).toISOString() : "");
+  document.getElementById("time").textContent=t||"—";
+  if(t && t!==lastSeen){prependRow(j); lastSeen=t;}
+}
+function prependRow(j){
+  const mid=isFinite(+j.mid)?+j.mid:((+j.bid+ +j.ask)/2);
+  const tr=document.createElement("tr"); tr.innerHTML=`
+    <td>${j.tf||"—"}</td>
+    <td>${j.time || (typeof j.ts_ms==="number"? new Date(j.ts_ms).toISOString():"—")}</td>
+    <td>${fmt(j.bid)}</td><td>${fmt(j.ask)}</td><td>${fmt(mid)}</td>
+    <td>${isFinite(+j.spread)?(+j.spread).toFixed(2):"—"}</td>
+    <td>${j.volume??"—"}</td>`;
+  const tb=document.getElementById("rows"); tb.prepend(tr);
+  while(tb.children.length>50) tb.lastChild.remove();
+}
+fetchLatest(); setInterval(fetchLatest,1000);
+</script>
+</html>
