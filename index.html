@@ -1,101 +1,185 @@
-<!doctype html><html lang="id"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>XAUUSD Live</title>
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>XAUUSD Live (M1 OHLC)</title>
 <style>
+  :root{color-scheme:dark light}
   body{font-family:system-ui,Arial,Helvetica,sans-serif;margin:0;background:#0b0e11;color:#e6e8ea}
   .ticker{display:flex;gap:14px;align-items:baseline;padding:12px 16px;background:#11161c;border-bottom:1px solid #1b232d;position:sticky;top:0}
-  .pair{font-weight:700;letter-spacing:.5px}.price{font-size:28px;font-weight:700}
-  .chg{padding:2px 8px;border-radius:999px;font-weight:600}.up{background:#0f2b17;color:#55d88a}.down{background:#2b1515;color:#ff7b7b}
+  .pair{font-weight:700;letter-spacing:.4px}
+  .price{font-size:28px;font-weight:800}
+  .chg{padding:2px 10px;border-radius:999px;font-weight:700}
+  .up{background:#0f2b17;color:#55d88a}
+  .down{background:#2b1515;color:#ff7b7b}
   .muted{opacity:.7}
-  .wrap{max-width:1200px;margin:0 auto;padding:12px 16px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  table{width:100%;border-collapse:collapse;margin:8px 0}
-  th,td{padding:8px;border-bottom:1px solid #1b232d;text-align:left;font-variant-numeric:tabular-nums}
-  h3{margin:8px 0}
+  .wrap{max-width:1024px;margin:0 auto;padding:12px 16px}
+  table{width:100%;border-collapse:collapse;margin:12px 0}
+  th,td{padding:10px;border-bottom:1px solid #1b232d;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .card{background:#11161c;border:1px solid #1b232d;border-radius:14px;padding:12px}
+  .label{font-size:12px;opacity:.8}
+  .val{font-weight:700}
 </style>
+</head>
 <body>
-  <div class="ticker">
-    <span class="pair" id="pair">XAUUSD</span>
-    <span class="price" id="price">—</span>
-    <span class="chg" id="chg">—</span>
-    <span class="muted" id="time">—</span>
-  </div>
-  <div class="wrap">
-    <div class="grid">
-      <div>
-        <h3>M3 (OHLCV)</h3>
-        <table><thead><tr>
-          <th>Waktu (UTC)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Vol</th>
-        </tr></thead><tbody id="m3"></tbody></table>
-      </div>
-      <div>
-        <h3>H1 (OHLCV)</h3>
-        <table><thead><tr>
-          <th>Waktu (UTC)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Vol</th>
-        </tr></thead><tbody id="h1"></tbody></table>
-      </div>
+
+<!-- Ticker -->
+<div class="ticker">
+  <span class="pair" id="pair">XAUUSD</span>
+  <span class="price" id="price">—</span>
+  <span class="chg" id="chg">—</span>
+  <span class="muted" id="time">—</span>
+</div>
+
+<div class="wrap">
+  <div class="grid">
+    <div class="card">
+      <div class="label">Status</div>
+      <div class="val" id="status">Menunggu data…</div>
+    </div>
+    <div class="card">
+      <div class="label">Sumber</div>
+      <div class="val">M1 close (tabel) + latest.json (fallback)</div>
     </div>
   </div>
 
+  <h3>OHLC M1 (terbaru di atas)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Waktu (UTC)</th>
+        <th>Open</th>
+        <th>High</th>
+        <th>Low</th>
+        <th>Close</th>
+        <th>Volume</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
 <script>
-const LATEST="data/latest.json";
-const M3="data/m3.jsonl", H1="data/h1.jsonl";
-let lastStamp="";
+const URL_LATEST = "data/xau_latest.json";
+const URL_M1_JL  = "data/xau_m1.jsonl";
 
-function fmt(n){ return (n==null || !isFinite(+n)) ? "—" : (+n).toFixed(2); }
-function tsToISO(t){ return (typeof t==="number") ? new Date(t).toISOString() : (t||"—"); }
+// util
+const fmt = (n, d=2) => Number.isFinite(+n) ? (+n).toFixed(d) : "—";
+const iso = ts => (ts ? new Date(+ts).toISOString() : "—");
 
-function addRow(tbody, o){
-  const tr=document.createElement("tr");
-  tr.innerHTML = `<td>${tsToISO(o.time)}</td>
-    <td>${fmt(o.open)}</td><td>${fmt(o.high)}</td><td>${fmt(o.low)}</td>
-    <td>${fmt(o.close)}</td><td>${o.volume??"—"}</td>`;
-  tbody.prepend(tr);
-  while(tbody.children.length>500) tbody.lastChild.remove();
+// fetch helpers (no-store + cache buster)
+async function fetchJSON(u){
+  const r = await fetch(u + "?t=" + Date.now(), {cache:"no-store"});
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+async function fetchJSONL(u){
+  const r = await fetch(u + "?t=" + Date.now(), {cache:"no-store"});
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  const text = await r.text();
+  const rows = [];
+  for (const line of text.split("\n")){
+    const s = line.trim();
+    if(!s) continue;
+    try { rows.push(JSON.parse(s)); } catch(e){}
+  }
+  return rows;
 }
 
-async function loadJSONL(url, tbodyId){
-  const tb=document.getElementById(tbodyId); tb.innerHTML="";
-  try{
-    const txt = await (await fetch(url,{cache:"no-store"})).text();
-    const lines = txt.trim()? txt.trim().split("\n") : [];
-    // tampil terbaru di atas
-    for(let i=lines.length-1;i>=0;i--){
-      try{ addRow(tb, JSON.parse(lines[i])); }catch(e){}
+// DOM refs
+const elPair  = document.getElementById("pair");
+const elPrice = document.getElementById("price");
+const elChg   = document.getElementById("chg");
+const elTime  = document.getElementById("time");
+const elRows  = document.getElementById("rows");
+const elStatus= document.getElementById("status");
+
+function renderTable(rows){
+  // newest first
+  const arr = rows.slice().sort((a,b)=>(b.ts_ms||0)-(a.ts_ms||0));
+  elRows.innerHTML = arr.map(r => `
+    <tr>
+      <td>${iso(r.ts_ms)}</td>
+      <td>${fmt(r.open)}</td>
+      <td>${fmt(r.high)}</td>
+      <td>${fmt(r.low)}</td>
+      <td>${fmt(r.close)}</td>
+      <td>${r.volume ?? "—"}</td>
+    </tr>
+  `).join("");
+}
+
+function renderTicker({latest, last, prev}){
+  elPair.textContent = (latest?.symbol) || (last?.symbol) || "XAUUSD";
+
+  // pilih harga utama
+  let price = Number.isFinite(+last?.close) ? +last.close : null;
+  let ts = last?.ts_ms ?? null;
+  if (!price && latest){
+    if (Number.isFinite(+latest.mid)) { price = +latest.mid; }
+    else if (Number.isFinite(+latest.close)) { price = +latest.close; }
+    else if (Number.isFinite(+latest.bid) && Number.isFinite(+latest.ask)) {
+      price = (+latest.bid + +latest.ask)/2;
     }
-  }catch(e){ console.error(url,e); }
-}
+    ts = latest.ts_ms ?? latest.time;
+  }
+  elPrice.textContent = price ? price.toFixed(2) : "—";
+  elTime.textContent = ts ? (typeof ts === "number" ? iso(ts) : String(ts)) : "—";
 
-async function refreshLatest(){
-  try{
-    const j = await (await fetch(LATEST,{cache:"no-store"})).json();
-    const mid = isFinite(+j.mid)? +j.mid : (isFinite(+j.close)? +j.close : NaN);
-    const prev = isFinite(+j.prev_close)? +j.prev_close : NaN;
-    document.getElementById("pair").textContent = j.symbol || "XAUUSD";
-    document.getElementById("price").textContent = isFinite(mid)? mid.toFixed(2) : "—";
-    const t = j.time ?? j.ts_ms ?? "";
-    document.getElementById("time").textContent = typeof t==="number"? new Date(t).toISOString() : String(t||"—");
-    const chgEl = document.getElementById("chg");
-    if(isFinite(mid) && isFinite(prev)){
-      const d = mid - prev, pct = ((mid/prev-1)*100).toFixed(2)+"%";
-      chgEl.textContent = `${d.toFixed(2)} (${pct})`; chgEl.className = `chg ${d>=0?"up":"down"}`;
-    }else{ chgEl.textContent="—"; chgEl.className="chg"; }
+  // perubahan dari prev close
+  let diff = null, pct = null;
+  if (Number.isFinite(price) && Number.isFinite(+prev?.close)) {
+    diff = price - (+prev.close);
+    pct  = (price/(+prev.close) - 1) * 100;
+    elChg.textContent = `${diff.toFixed(2)} (${pct.toFixed(2)}%)`;
+    elChg.className = "chg " + (diff >= 0 ? "up" : "down");
+  } else {
+    elChg.textContent = "—";
+    elChg.className = "chg";
+  }
 
-    // jika ada bar baru dan tf-nya M3/H1, tambahkan ke tabel terkait
-    const stamp = `${j.tf||""}-${j.time||j.ts_ms}`;
-    if(stamp && stamp!==lastStamp){
-      lastStamp = stamp;
-      if(j.tf==="M3") addRow(document.getElementById("m3"), j);
-      if(j.tf==="H1") addRow(document.getElementById("h1"), j);
+  // status singkat
+  if (last && prev && Number.isFinite(+last.high) && Number.isFinite(+last.low)) {
+    const range = (+last.high - +last.low);
+    const body  = Math.abs(+last.close - +last.open);
+    const ratio = range ? (body / range) : 0;
+    let s = "Netral / Ranging";
+    if (diff !== null) {
+      if (diff > 0 && ratio > 0.6) s = "Bullish bar kuat";
+      else if (diff < 0 && ratio > 0.6) s = "Bearish bar kuat";
+      else if (ratio <= 0.3) s = "Doji / konsolidasi";
     }
-  }catch(e){ console.error(e); }
+    elStatus.textContent = s;
+  } else {
+    elStatus.textContent = "Menunggu data…";
+  }
 }
 
-// initial load riwayat
-loadJSONL(M3,"m3"); loadJSONL(H1,"h1");
-// polling
-refreshLatest(); setInterval(refreshLatest, 5000);
-// refresh riwayat berkala (ambil commit Pages baru)
-setInterval(()=>{ loadJSONL(M3,"m3"); loadJSONL(H1,"h1"); }, 60000);
+async function refresh(){
+  try{
+    const [latest, m1] = await Promise.all([
+      fetchJSON(URL_LATEST).catch(()=>null),
+      fetchJSONL(URL_M1_JL).catch(()=>[])
+    ]);
+    // sort ascending untuk ambil last & prev
+    m1.sort((a,b)=>(a.ts_ms||0)-(b.ts_ms||0));
+    const last = m1[m1.length-1] || null;
+    const prev = m1[m1.length-2] || null;
+
+    renderTicker({latest, last, prev});
+    if (m1.length) renderTable(m1);
+  }catch(e){
+    console.error(e);
+    elStatus.textContent = "Gagal memuat data";
+  }
+}
+
+// pertama kali dan refresh berkala (update kamu per menit → 20s cukup)
+refresh();
+setInterval(refresh, 20000);
 </script>
-</body></html>
+</body>
+</html>
