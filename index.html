@@ -19,7 +19,11 @@
   .status{font-size:11px;opacity:.85;margin:6px 0}
   .tablewrap{overflow:auto;border:1px solid #1b232d;border-radius:10px}
   table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
-  thead th{position:sticky;top:48px;background:#0e1319;z-index:1}
+  thead th {top: 0; background:#0e1319; z-index: 2; }
+.tablewrap { overflow:auto; max-height: calc(100vh - 160px); border:1px solid #1b232d; border-radius:10px; }
+/* biar header nggak “nembus” baris */
+thead th { box-shadow: 0 1px 0 #1b232d; }
+
   th,td{padding:3px 6px;border-bottom:1px solid #1b232d;text-align:right;line-height:1.1}
   th:first-child,td:first-child{text-align:left}
   /* Dense mode = lebih kecil lagi */
